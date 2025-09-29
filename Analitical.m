@@ -1,0 +1,163 @@
+clear all;
+clc;
+%% Inputs
+S = -100; % [N]
+L = 1000; % [mm]
+E = 70000;
+nu = 0.3;
+h = 40; % [mm]
+t_f = 1; % [mm]
+b = 40; % [mm]
+t_w = 3; % [mm]
+sig_y = 400; %yeild stress
+%%
+% Define s1, s2, s3, and z vectors
+s1 = linspace(0, 40, 1000); % From 0 to 40 with 1000 points
+s2 = linspace(0, 40, 1000); % From 0 to 40 with 1000 points
+s3 = linspace(0, 40, 1000); % From 40 to 0 with 1000 points
+z = linspace(0, L, 1000); % From 0 to L with 1000 points
+% Define the location of centroid to y axis
+xi_c = 2*(t_f*(b - t_w)*(t_w/2+((b-t_w)/2)))/ (h*t_w+2*(t_f*b-t_w));
+% Define moments of inertia
+I_xx = (t_w * h^3) / 12 + 2 * t_f * b * (h / 2)^2;
+I_yy = 2 * (b^3*t_f/12) + 2*b*t_f*(b/2-xi_c)^2 + h*t_w*xi_c^2;
+% Define shear flows
+q12 = -S * t_f * h .* s1 ./ (2 * I_xx);
+q2 = q12(length(q12));
+q23 = S * t_w / I_xx .* (s2.^2 ./ 2 - (h / 2) .* s2) + q2;
+q3 = q23(length(q23));
+q34 = +S * t_f * h / (2 * I_xx) .* s3 + q3;
+q4 = q34(length(q34));
+% location of the shear center
+x_sc = -(t_f * h^2 * b^2) / (4 * I_xx);
+% location of the centroid from midle of the t_w
+xi_c = 2*(t_f*(b - t_w)*(t_w/2+((b-t_w)/2)))/ (h*t_w+2*(t_f*b-t_w));
+% vertical displacement
+v = -(S .* z.^3) / (6 * E * I_xx) + (S * L .* z.^2) / (2 * E * I_xx);
+v_L = v(length(v));
+% twist at the end of the beam
+J = (1 / 3) * (2 * b * t_f^3 + h * t_w^3);
+G = E / (2 * (1 + nu));
+T = S * abs(x_sc);
+phi = T * L / (G * J);
+%% warping
+c = (-2)*T/(G*J);
+%x_sc = abs(x_sc);
+tau_max = abs(t_w * (T/J)); % maximum shear stress
+AR_1 = (abs(x_sc) * h/2)/2; w_1 = c*AR_1;
+AR_2 = ((-b * h/2)/2)+ AR_1; w_2 = c*AR_2;
+w_4 = - w_2 ; w_3 = - w_1 ;
+w = [w_4, w_3, w_1, w_2]; %warping in the same order as path in ansys
+%% Buckling
+A = 2 * t_f * b + h * t_w;
+Aw = h * t_w;
+Af = t_f * b;
+%Euler
+I_min = min(I_xx,I_yy);
+l_e = 2*L;
+P_creu = (pi^2 * E * I_min)/l_e^2;
+%Local
+sig_crf =  0.385*E*(t_f/b)^2; % local critical stress for flang
+sig_crw = 3.6*E*(t_w/h)^2; %local critical stress for wall
+sig_final = min(sig_crw,sig_crf);
+P_crloc = min(sig_y,sig_final)*2*Af + min(sig_y,sig_final)*Aw;
+%Torsion
+x_s = xi_c + abs(x_sc);
+I_o = I_xx + I_yy + A*(x_s)^2;
+%first_term = (t_w * abs(x_sc) * (h/2)^3 / 3);
+%second_term = 4 * t_f * (h^2 * b^2 / 48 - AR_1 * h * b^2 / 4 + (AR_1)^2 * b);
+gam = 8.533e6;
+P_crtor = A/I_o * (G*J + (pi()^2 * E * gam) /L^2);
+%gam = 2*((x_sc^2 * h^3/24)+t_f*(h^2/4*x_sc^2*b+h^2*b^3/12-h^2*x_sc*b^2/4));
+%P_crtor = A/I_o * ((G*J + pi^2 * E *gam) / (L^2));
+%combined
+P_cr_x = (pi^2 * E * I_xx)/l_e^2;
+syms P
+M = [P - P_cr_x, -P * x_s;
+     -P * x_s, (I_o / A) * (P - P_crtor)];
+
+% Solve for P where determinant of M is zero
+determinant = det(M);
+P_solution = double(solve(determinant == 0, P)); % Solves and converts to numerical
+P_crcomb = max(P_solution);
+%% outputs
+disp('Second moment of inertia (Iyy):');
+disp(I_yy);
+disp('Second moment of inertia (Ixx):');
+disp(I_xx);
+disp('Horizontal location of SC:');
+disp(x_sc);
+disp('Displacement vector:');
+disp(xi_c);
+disp('Horizontal location of centroid from wall:');
+disp(xi_c);
+disp('Twist:');
+disp(T);
+disp('Twist angle:');
+disp(phi);
+disp('Maximum shear stress:');
+disp(tau_max);
+disp('Warping:');
+disp(w);
+disp('Critical Eulelr buckling laod:');
+disp(P_creu);
+disp('Critical Local buckling laod:');
+disp(P_crloc);
+disp('Critical torsional buckling laod:');
+disp(P_crtor);
+disp('Critical combined buckling laod:');
+disp(P_crcomb);
+% Plot q12 vs s1
+% figure;
+% plot(s1, q12, 'b-', 'LineWidth', 2);
+% xlabel('s_1 (distance along section 1)');
+% ylabel('q_{12} (shear flow)');
+% title('Shear Flow q_{12} vs. s_1');
+% grid on;
+% 
+% % Plot q23 vs s2
+% figure;
+% plot(s2, q23, 'r-', 'LineWidth', 2);
+% xlabel('s_2 (distance along section 2)');
+% ylabel('q_{23} (shear flow)');
+% title('Shear Flow q_{23} vs. s_2');
+% grid on;
+% 
+% % Plot q34 vs s3
+% figure;
+% plot(s3, q34, 'g-', 'LineWidth', 2);
+% xlabel('s_3 (distance along section 3)');
+% ylabel('q_{34} (shear flow)');
+% title('Shear Flow q_{34} vs. s_3');
+% grid on;
+% Plot v vs z
+% figure;
+% plot(z, v, 'm-', 'LineWidth', 2);
+% xlabel('z (length along the beam)');
+% ylabel('v (vertical displacement)');
+% title('Vertical Displacement v vs. z');
+% grid on;
+
+%plot combined graph
+% Combine x positions
+x_combined = [linspace(0, b, length(q12)), linspace(b, b + h, length(q23)), linspace(b + h, b + 2 * h, length(q34))];
+
+% Combine shear flows
+q_combined1 = [q12, q23, q34];
+q_combined2 = [q12./t_f, q23./t_w, q34./t_f];
+
+% Create the first subplot
+subplot(2, 1, 1);     % Divide the figure into 2 rows and 1 column, and select the 1st
+plot(x_combined, q_combined1, 'r', 'LineWidth', 2); % Plot with red line
+xlabel('Distance');
+ylabel('Shear flow');
+title('Distribution of shear flow');
+grid on;
+
+% Create the second subplot
+subplot(2, 1, 2);     % Divide the figure into 2 rows and 1 column, and select the 2nd
+plot(x_combined, q_combined2, 'b', 'LineWidth', 2); % Plot with blue line
+xlabel('Distance');
+ylabel('Shear Stress');
+title('Distribution of Shear stress');
+grid on;
